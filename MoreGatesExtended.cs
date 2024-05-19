@@ -27,7 +27,7 @@ namespace MoreGatesExtended
     {
         const string pluginID = "shudnal.MoreGatesExtended";
         const string pluginName = "More Gates Extended";
-        const string pluginVersion = "1.0.0";
+        const string pluginVersion = "1.0.1";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -42,6 +42,8 @@ namespace MoreGatesExtended
 
         internal static readonly Dictionary<string, string> customRecipesList = new Dictionary<string, string>();
         internal static HashSet<string> disablePiecesList = new HashSet<string>();
+        
+        internal static AssetBundle bundleFromResources;
 
         private void Awake()
         {
@@ -55,6 +57,11 @@ namespace MoreGatesExtended
 
             LoadTranslation("jotunn.json", "English");
             LoadTranslation("jotunn.json", "Russian");
+
+            LoadTranslation("moregates.json", "English");
+            LoadTranslation("moregates.json", "Russian");
+
+            FillCustomRecipesAndDisabledPieces();
 
             RegisterPrefabs();
         }
@@ -100,7 +107,19 @@ namespace MoreGatesExtended
             LocalizationManager.Instance.GetLocalization().AddJsonFile(lang, (new StreamReader(resourceStream, Encoding.UTF8)).ReadToEnd());
         }
 
-        internal static AssetBundle bundleFromResources;
+        internal static void FillCustomRecipesAndDisabledPieces()
+        {
+            foreach (string requirement in customRecipes.Value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int divisorIndex = requirement.IndexOf(":");
+                if (divisorIndex == 0)
+                    customRecipesList.Add(requirement, "");
+                else
+                    customRecipesList.Add(requirement.Substring(0, divisorIndex), requirement.Substring(divisorIndex + 1));
+            };
+
+            disablePiecesList = new HashSet<string>(disabledPieces.Value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
+        }
 
         private static RequirementConfig[] ParseRequirements(string itemRecipe)
         {
@@ -147,27 +166,8 @@ namespace MoreGatesExtended
             PieceManager.Instance.AddPiece(new CustomPiece(gameObject, true, pieceConfig));
         }
 
-        internal static void AddCustomRecipes()
-        {
-            foreach (string requirement in customRecipes.Value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                int divisorIndex = requirement.IndexOf(":");
-                if (divisorIndex == 0)
-                    customRecipesList.Add(requirement, "");
-                else
-                    customRecipesList.Add(requirement.Substring(0, divisorIndex), requirement.Substring(divisorIndex + 1));
-            };
-
-            disablePiecesList = new HashSet<string>(disabledPieces.Value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
-        }
-
         public static void RegisterPrefabs()
         {
-            LoadTranslation("moregates.json", "English");
-            LoadTranslation("moregates.json", "Russian");
-
-            AddCustomRecipes();
-
             bundleFromResources = AssetUtils.LoadAssetBundleFromResources("moregates");
 
             LoadAsset("h_drawbridge01", new RequirementConfig[3]
