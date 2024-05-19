@@ -78,7 +78,7 @@ namespace MoreGatesExtended
                                                                                        "\nIf you have created your own category then don't forget to add related entry starting with \"jotunn_cat_\" to localization file." +
                                                                                        "\nRestart to see effect.");
 
-            disabledPieces = config("Pieces", "Disabled pieces", defaultValue: "", "Prefab names comma separated case insensitive. Piece from that list will not be loaded. Restart to see effect.");
+            disabledPieces = config("Pieces", "Disabled pieces", defaultValue: "h_logshort26,h_logshort45,corewood_stack", "Prefab names comma separated case insensitive. Piece from that list will not be loaded. Restart to see effect.");
             customRecipes = config("Pieces", "Custom recipes", defaultValue: "h_drawbridge02:Wood:55:Bronze:8:Chain:4", "Custom pieces recipies, comma separated, starts with prefab name then requirement:amount. " +
                                                                                                                         "\nDefault value is given for example. Restart to see effect.");
         }
@@ -168,6 +168,13 @@ namespace MoreGatesExtended
             AddCustomRecipes();
 
             bundleFromResources = AssetUtils.LoadAssetBundleFromResources("moregates");
+
+            LoadAsset("h_drawbridge01", new RequirementConfig[3]
+            {
+                new RequirementConfig("Wood", 60, recover:true),
+                new RequirementConfig("Iron", 10, recover:true),
+                new RequirementConfig("Chain", 4, recover:true)
+            });
 
             LoadAsset("h_drawbridge02", new RequirementConfig[3]
             {
@@ -353,6 +360,37 @@ namespace MoreGatesExtended
             LoadAsset("h_chain", new RequirementConfig[1]
             {
                 new RequirementConfig("Chain", 1, recover:true)
+            });
+
+            LoadAsset("hayzestake_01", new RequirementConfig[2]
+            {
+                new RequirementConfig("Wood", 4, recover:true),
+                new RequirementConfig("RoundLog", 7, recover:true)
+            });
+
+            LoadAsset("h_loglong26", new RequirementConfig[1]
+            {
+                new RequirementConfig("RoundLog", 2, recover:true)
+            });
+
+            LoadAsset("h_loglong45", new RequirementConfig[1]
+            {
+                new RequirementConfig("RoundLog", 2, recover:true)
+            });
+
+            LoadAsset("h_logshort26", new RequirementConfig[1]
+            {
+                new RequirementConfig("RoundLog", 1, recover:true)
+            });
+
+            LoadAsset("h_logshort45", new RequirementConfig[1]
+            {
+                new RequirementConfig("RoundLog", 1, recover:true)
+            });
+
+            LoadAsset("corewood_stack", new RequirementConfig[1]
+            {
+                new RequirementConfig("RoundLog", 50, recover:true)
             });
 
             bundleFromResources = null;
