@@ -1,4 +1,5 @@
 ﻿// Original assets was taken from mod MoreGates as original author shows no interest in updating original mod.
+// https://www.nexusmods.com/valheim/mods/1087
 // Credits and cheers to LordHayze for creating that assets!
 
 using BepInEx;
