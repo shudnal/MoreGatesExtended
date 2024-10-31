@@ -25,9 +25,9 @@ namespace MoreGatesExtended
     [BepInIncompatibility("hayze.Moregates")]
     public class MoreGatesExtended : BaseUnityPlugin
     {
-        const string pluginID = "shudnal.MoreGatesExtended";
-        const string pluginName = "More Gates Extended";
-        const string pluginVersion = "1.0.1";
+        public const string pluginID = "shudnal.MoreGatesExtended";
+        public const string pluginName = "More Gates Extended";
+        public const string pluginVersion = "1.0.2";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -152,18 +152,17 @@ namespace MoreGatesExtended
             if (customRecipesList.ContainsKey(name))
                 requirements = ParseRequirements(customRecipesList[name]);
 
-            GameObject gameObject = bundleFromResources.LoadAsset<GameObject>(name);
-
             PieceConfig pieceConfig = new PieceConfig
             {
                 Name = $"$piece_mg_{name}",
-                PieceTable = buildTool.Value,
-                Category = buildCategory.Value,
+                PieceTable = buildTool.Value.IsNullOrWhiteSpace() ? "Hammer" : buildTool.Value,
+                Category = buildCategory.Value.IsNullOrWhiteSpace() ? "moregates" : buildCategory.Value,
                 Requirements = requirements,
                 Description = $"$piece_mg_{name}_desc",
+                CraftingStation = "Workbench"
             };
 
-            PieceManager.Instance.AddPiece(new CustomPiece(gameObject, true, pieceConfig));
+            PieceManager.Instance.AddPiece(new CustomPiece(bundleFromResources, name, fixReference:true, pieceConfig));
         }
 
         public static void RegisterPrefabs()
@@ -393,9 +392,6 @@ namespace MoreGatesExtended
             {
                 new RequirementConfig("RoundLog", 50, recover:true)
             });
-
-            bundleFromResources = null;
         }
-
     }
 }

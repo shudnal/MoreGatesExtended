@@ -1,10 +1,10 @@
 {
   "name": "MoreGatesExtended",
-  "version_number": "1.0.1",
+  "version_number": "1.0.2",
   "website_url": "https://www.nexusmods.com/valheim/mods/1087",
   "description": "MoreGates mod originally created by LordHayze. Localization support, configurable recipes, disableable pieces.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202",
-    "ValheimModding-Jotunn-2.20.0"
+    "ValheimModding-Jotunn-2.21.2"
   ]
 }
