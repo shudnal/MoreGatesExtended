@@ -3,7 +3,7 @@
 
 Some pieces are disabled in the build menu by default because they duplicate vanilla parts. Their prefabs remain registered, so existing structures stay loadable. Clear `Disabled pieces` to make them buildable again.
 
-You can change category and tool which is used to build. You can't change category and tool for single piece.
+You can change the tool used to build the pieces. MoreGates pieces use the fixed internal `moregates` Jotunn piece category and Valheim's native Hammer usage tags for their build-menu classification.
 
 ## Recipes are configurable
 
@@ -40,14 +40,14 @@ Or [Official BepInEx Configuration Manager](https://valheim.thunderstore.io/pack
 
 ## Server configuration
 
-Install the mod and its dependencies on the server and all clients. Jotunn synchronizes the build tool, category, disabled pieces and recipes from the server; only server administrators can edit these settings during a multiplayer session. Changes are reapplied after piece registration, initial or subsequent synchronization, and local configuration changes. Local values are restored after disconnecting and used when entering a local game. Logging remains local and is not synchronized. Invalid custom recipes fall back to the default recipe for the affected piece.
+Install the mod and its dependencies on the server and all clients. Jotunn synchronizes the build tool, disabled pieces and recipes from the server; only server administrators can edit these settings during a multiplayer session. Changes are reapplied after piece registration, initial or subsequent synchronization, and local configuration changes. Local values are restored after disconnecting and used when entering a local game. Logging remains local and is not synchronized. Invalid custom recipes fall back to the default recipe for the affected piece.
 
 ## Dependencies
 
 - [BepInExPack Valheim 5.4.2350](https://thunderstore.io/c/valheim/p/denikson/BepInExPack_Valheim/)
 - [Jotunn](https://thunderstore.io/c/valheim/p/ValheimModding/Jotunn/)
 
-Jotunn handles both prefab registration and configuration synchronization. Install a Jotunn release compatible with Valheim 1.0.7 on the server and all clients.
+Jotunn handles both prefab registration and configuration synchronization. Install a Jotunn release compatible with the current Valheim version on the server and all clients.
 
 ## Donation
 [Buy Me a Coffee](https://buymeacoffee.com/shudnal)

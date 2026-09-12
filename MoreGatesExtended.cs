@@ -28,7 +28,7 @@ namespace MoreGatesExtended
     {
         public const string pluginID = "shudnal.MoreGatesExtended";
         public const string pluginName = "More Gates Extended";
-        public const string pluginVersion = "1.0.3";
+        public const string pluginVersion = "1.0.4";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -36,7 +36,6 @@ namespace MoreGatesExtended
 
         internal static ConfigEntry<bool> loggingEnabled;
         internal static ConfigEntry<string> buildTool;
-        internal static ConfigEntry<string> buildCategory;
 
         internal static ConfigEntry<string> disabledPieces;
         internal static ConfigEntry<string> customRecipes;
@@ -84,7 +83,6 @@ namespace MoreGatesExtended
             PieceManager.OnPiecesRegistered -= OnPiecesRegistered;
             SynchronizationManager.OnConfigurationSynchronized -= OnConfigurationSynchronized;
             buildTool.SettingChanged -= OnConfigurationChanged;
-            buildCategory.SettingChanged -= OnConfigurationChanged;
             disabledPieces.SettingChanged -= OnConfigurationChanged;
             customRecipes.SettingChanged -= OnConfigurationChanged;
             configurationUpdatePending = false;
@@ -104,16 +102,11 @@ namespace MoreGatesExtended
         {
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
             buildTool = config("General", "Tool", defaultValue: "Hammer", "Identifier of tool to place new objects. This is what is set in PieceTable property of PieceConfig. Changes are applied after configuration synchronization.");
-            buildCategory = config("General", "Category", defaultValue: "moregates", "Identifier of category to place new objects. This is what is set in Category property of PieceConfig." +
-                                                                                       "\nIf you have created your own category then don't forget to add related entry starting with \"jotunn_cat_\" to localization file." +
-                                                                                       "\nChanges are applied after configuration synchronization.");
-
             disabledPieces = config("Pieces", "Disabled pieces", defaultValue: "h_logshort26,h_logshort45,corewood_stack", "Prefab names comma separated case insensitive. Pieces in this list are hidden from the build menu; existing structures remain loadable. Changes are applied after configuration synchronization.");
             customRecipes = config("Pieces", "Custom recipes", defaultValue: "h_drawbridge02:Wood:55:Bronze:8:Chain:4", "Custom pieces recipies, comma separated, starts with prefab name then requirement:amount. " +
                                                                                                                         "\nDefault value is given for example. Changes are applied after configuration synchronization.");
 
             buildTool.SettingChanged += OnConfigurationChanged;
-            buildCategory.SettingChanged += OnConfigurationChanged;
             disabledPieces.SettingChanged += OnConfigurationChanged;
             customRecipes.SettingChanged += OnConfigurationChanged;
         }
@@ -235,7 +228,6 @@ namespace MoreGatesExtended
         {
             FillCustomRecipesAndDisabledPieces();
             string tool = string.IsNullOrWhiteSpace(buildTool.Value) ? "Hammer" : buildTool.Value.Trim();
-            string category = string.IsNullOrWhiteSpace(buildCategory.Value) ? "moregates" : buildCategory.Value.Trim();
             PieceTable targetTable = PieceManager.Instance.GetPieceTable(tool);
             if (targetTable == null)
             {
@@ -253,7 +245,6 @@ namespace MoreGatesExtended
                     continue;
 
                 customPiece.Piece.m_enabled = !disablePiecesList.Contains(entry.Key);
-                customPiece.Category = category;
                 if (targetTable != null)
                 {
                     foreach (PieceTable table in tables)
@@ -285,6 +276,69 @@ namespace MoreGatesExtended
                 Player.m_localPlayer.UpdateAvailablePiecesList();
         }
 
+        private static Piece.UsageTagFlags GetUsageTags(string name)
+        {
+            switch (name)
+            {
+                case "h_drawbridge01":
+                case "h_drawbridge02":
+                    return Piece.UsageTagFlags.Building | Piece.UsageTagFlags.Doors | Piece.UsageTagFlags.Defense;
+
+                case "lift_gate":
+                case "lift_gate2":
+                case "Hayze_gate_01":
+                case "Hayze_gate_02":
+                case "Hayze_gate_03":
+                case "Hayze_gate_04":
+                case "Hayze_gate_05":
+                case "Hayze_gate_06":
+                case "h_door_01":
+                case "h_door_02":
+                case "h_door_03":
+                case "h_shutter_01":
+                case "h_trapdoor":
+                case "h_trapdoorbig":
+                case "h_trapdoor2":
+                case "h_trapdoorbig2":
+                case "Hayze_halfgate_01":
+                case "Hayze_halfgate_02":
+                case "h_window_01":
+                case "h_window_02":
+                case "h_window_03":
+                case "h_window_04":
+                case "h_window_05":
+                case "h_window_06":
+                case "h_window_07":
+                case "h_window_08":
+                case "h_window_09":
+                case "h_window_10":
+                case "h_window_11":
+                case "h_window_12":
+                case "h_window_13":
+                case "h_window_14":
+                    return Piece.UsageTagFlags.Building | Piece.UsageTagFlags.Doors;
+
+                case "hayzestake_01":
+                    return Piece.UsageTagFlags.Building | Piece.UsageTagFlags.Defense;
+
+                case "h_loglong26":
+                case "h_loglong45":
+                case "h_logshort26":
+                case "h_logshort45":
+                    return Piece.UsageTagFlags.Building | Piece.UsageTagFlags.Architecture;
+
+                case "h_chain":
+                    return Piece.UsageTagFlags.Decor;
+
+                case "corewood_stack":
+                    return Piece.UsageTagFlags.Misc | Piece.UsageTagFlags.Stacks;
+
+                default:
+                    instance.Logger.LogWarning($"No Hammer usage tags configured for '{name}'; using Misc.");
+                    return Piece.UsageTagFlags.Misc;
+            }
+        }
+
         private static void LoadAsset(string name, RequirementConfig[] requirements)
         {
             // Register the same network prefabs on every peer before the first server configuration arrives.
@@ -299,6 +353,9 @@ namespace MoreGatesExtended
             };
 
             CustomPiece piece = new CustomPiece(bundleFromResources, name, fixReference: true, pieceConfig);
+            if (piece.Piece != null)
+                piece.Piece.m_usage = GetUsageTags(name);
+
             if (PieceManager.Instance.AddPiece(piece))
             {
                 piece.Piece.m_enabled = !disablePiecesList.Contains(name);
