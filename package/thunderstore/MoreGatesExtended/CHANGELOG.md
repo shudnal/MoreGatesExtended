@@ -1,3 +1,6 @@
+# 1.0.5
+* Fixed excessively loud door, window, and other MoreGates sound effects after Valheim 1.0 by making them respect the game's Master and SFX volume settings.
+
 # 1.0.4
 * Updated piece classification for the Valheim 1.0.12 build menu using native Hammer usage tags.
 * Assigned doors and windows, drawbridges, defenses, structural beams, decoration, and the corewood stack to their appropriate build-menu categories.

@@ -28,7 +28,7 @@ namespace MoreGatesExtended
     {
         public const string pluginID = "shudnal.MoreGatesExtended";
         public const string pluginName = "More Gates Extended";
-        public const string pluginVersion = "1.0.4";
+        public const string pluginVersion = "1.0.5";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -88,6 +88,7 @@ namespace MoreGatesExtended
             configurationUpdatePending = false;
             registeredObjectDB = null;
             registeredPieces.Clear();
+            PrefabAudioRouting.Clear();
             Config.Save();
             instance = null;
             harmony?.UnpatchSelf();
@@ -142,6 +143,7 @@ namespace MoreGatesExtended
         private static void OnPiecesRegistered()
         {
             registeredObjectDB = ObjectDB.instance;
+            PrefabAudioRouting.Apply(AudioMan.instance);
             RequestConfigurationUpdate();
         }
 
@@ -153,6 +155,175 @@ namespace MoreGatesExtended
 
             configurationUpdatePending = false;
             ApplyPieceConfiguration();
+        }
+
+        [HarmonyPatch(typeof(AudioMan), nameof(AudioMan.Awake))]
+        private static class AudioMan_Awake_AudioRouting
+        {
+            private static void Postfix(AudioMan __instance)
+            {
+                // A duplicate AudioMan destroys itself; never bind to its mixer.
+                if (__instance == AudioMan.instance)
+                    PrefabAudioRouting.Apply(__instance);
+            }
+        }
+
+        private static class PrefabAudioRouting
+        {
+            private static readonly HashSet<AudioSource> sources = new HashSet<AudioSource>();
+            private static readonly Dictionary<Type, FieldInfo[]> effectFields = new Dictionary<Type, FieldInfo[]>();
+            private static AssetBundle collectedBundle;
+            private static UnityEngine.Audio.AudioMixerGroup sfxGroup;
+            private static UnityEngine.Audio.AudioMixer warnedMixer;
+
+            private static bool IsHeadless => SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null;
+
+            internal static void Collect(AssetBundle bundle)
+            {
+                if (bundle == null || bundle == collectedBundle || IsHeadless)
+                    return;
+
+                try
+                {
+                    // Capture bundle-local references before Jotunn replaces mocks with shared vanilla prefabs.
+                    // Loading all prefab assets also includes standalone sounds that are not children of a piece.
+                    HashSet<GameObject> visited = new HashSet<GameObject>();
+                    foreach (GameObject prefab in bundle.LoadAllAssets<GameObject>())
+                        CollectPrefab(prefab, visited);
+
+                    collectedBundle = bundle;
+                    LogInfo($"Collected {sources.Count} MoreGates prefab audio source(s).");
+                }
+                catch (Exception exception)
+                {
+                    instance.Logger.LogWarning($"Could not collect all MoreGates prefab audio sources: {exception}");
+                }
+
+                // Covers initialization after an AudioMan already exists. OnPiecesRegistered reapplies after mocking.
+                Apply(AudioMan.instance);
+            }
+
+            private static bool IsMock(Transform transform)
+            {
+                for (Transform current = transform; current != null; current = current.parent)
+                {
+                    if (current.name.StartsWith("JVLmock_", StringComparison.Ordinal) ||
+                        current.name.StartsWith("VLmock_", StringComparison.Ordinal))
+                        return true;
+                }
+
+                return false;
+            }
+
+            private static void CollectPrefab(GameObject prefab, HashSet<GameObject> visited)
+            {
+                if (prefab == null || !visited.Add(prefab) || IsMock(prefab.transform))
+                    return;
+
+                foreach (AudioSource source in prefab.GetComponents<AudioSource>())
+                    sources.Add(source);
+
+                foreach (MonoBehaviour component in prefab.GetComponents<MonoBehaviour>())
+                {
+                    if (component == null)
+                        continue;
+
+                    foreach (FieldInfo field in GetEffectFields(component.GetType()))
+                    {
+                        EffectList effects = field.GetValue(component) as EffectList;
+                        if (effects?.m_effectPrefabs == null)
+                            continue;
+
+                        // Includes Door open/close/locked effects and nested destruction or placement effects.
+                        foreach (EffectList.EffectData effect in effects.m_effectPrefabs)
+                            if (effect != null)
+                                CollectPrefab(effect.m_prefab, visited);
+                    }
+                }
+
+                // Transform traversal includes inactive children without activating or instantiating any prefab.
+                foreach (Transform child in prefab.transform)
+                    CollectPrefab(child.gameObject, visited);
+            }
+
+            private static FieldInfo[] GetEffectFields(Type componentType)
+            {
+                if (!effectFields.TryGetValue(componentType, out FieldInfo[] fields))
+                {
+                    List<FieldInfo> result = new List<FieldInfo>();
+                    for (Type type = componentType; type != null && typeof(MonoBehaviour).IsAssignableFrom(type); type = type.BaseType)
+                    {
+                        foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public |
+                            BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                            if (field.FieldType == typeof(EffectList))
+                                result.Add(field);
+                    }
+
+                    fields = result.ToArray();
+                    effectFields[componentType] = fields;
+                }
+
+                return fields;
+            }
+
+            internal static void Apply(AudioMan audioMan)
+            {
+                if (instance == null || audioMan == null || audioMan != AudioMan.instance ||
+                    audioMan.m_masterMixer == null || sources.Count == 0 || IsHeadless)
+                    return;
+
+                try
+                {
+                    UnityEngine.Audio.AudioMixer mixer = audioMan.m_masterMixer;
+                    if (sfxGroup == null || sfxGroup.audioMixer != mixer)
+                    {
+                        // Match the group itself, not an arbitrary child whose path contains "Sfx".
+                        sfxGroup = mixer.FindMatchingGroups(string.Empty)
+                            .FirstOrDefault(group => group != null && string.Equals(group.name, "Sfx", StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    if (sfxGroup == null)
+                    {
+                        if (warnedMixer != mixer)
+                        {
+                            warnedMixer = mixer;
+                            instance.Logger.LogWarning("Could not find the game's Sfx mixer group; MoreGates prefab audio routing was not changed.");
+                        }
+
+                        // Never fall back to Master or GUI: that would route these sounds to the wrong bus.
+                        return;
+                    }
+
+                    warnedMixer = null;
+                    sources.RemoveWhere(source => source == null);
+                    int changed = 0;
+                    foreach (AudioSource source in sources)
+                    {
+                        if (source.outputAudioMixerGroup == sfxGroup)
+                            continue;
+
+                        // Replace both missing groups and mixer copies embedded in the legacy asset bundle.
+                        source.outputAudioMixerGroup = sfxGroup;
+                        changed++;
+                    }
+
+                    LogInfo($"Prepared {sources.Count} MoreGates prefab audio source(s); updated {changed} Sfx mixer binding(s).");
+                }
+                catch (Exception exception)
+                {
+                    // Audio initialization must not prevent piece registration or AudioMan startup.
+                    instance.Logger.LogWarning($"Could not apply MoreGates prefab audio routing: {exception}");
+                }
+            }
+
+            internal static void Clear()
+            {
+                sources.Clear();
+                effectFields.Clear();
+                collectedBundle = null;
+                sfxGroup = null;
+                warnedMixer = null;
+            }
         }
 
         internal static void FillCustomRecipesAndDisabledPieces()
@@ -366,6 +537,7 @@ namespace MoreGatesExtended
         public static void RegisterPrefabs()
         {
             bundleFromResources = AssetUtils.LoadAssetBundleFromResources("moregates");
+            PrefabAudioRouting.Collect(bundleFromResources);
 
             LoadAsset("h_drawbridge01", new RequirementConfig[3]
             {
