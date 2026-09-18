@@ -65,11 +65,7 @@ namespace MoreGatesExtended
 
             Game.isModded = true;
 
-            LoadTranslation("jotunn.json", "English");
-            LoadTranslation("jotunn.json", "Russian");
-
-            LoadTranslation("moregates.json", "English");
-            LoadTranslation("moregates.json", "Russian");
+            LoadTranslations();
 
             FillCustomRecipesAndDisabledPieces();
 
@@ -119,15 +115,48 @@ namespace MoreGatesExtended
                 new ConfigurationManagerAttributes { IsAdminOnly = synchronizedSetting }));
         }
 
-        internal static void LoadTranslation(string file, string lang)
+        internal static void LoadTranslations()
         {
-            Assembly executingAssembly = Assembly.GetExecutingAssembly();
+            Assembly assembly = typeof(MoreGatesExtended).Assembly;
+            string prefix = typeof(MoreGatesExtended).Namespace + ".translations.";
+            CustomLocalization localization = LocalizationManager.Instance.GetLocalization();
 
-            string name = executingAssembly.GetManifestResourceNames().Single(str => str.EndsWith(file) && str.IndexOf(lang) >= 0);
+            // Each embedded translations/<Language>/*.json resource belongs to exactly one language.
+            foreach (string resourceName in assembly.GetManifestResourceNames().OrderBy(name => name, StringComparer.Ordinal))
+            {
+                if (!resourceName.StartsWith(prefix, StringComparison.Ordinal) ||
+                    !resourceName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-            Stream resourceStream = executingAssembly.GetManifestResourceStream(name);
+                string relativeName = resourceName.Substring(prefix.Length);
+                int separator = relativeName.IndexOf('.');
+                if (separator <= 0)
+                {
+                    instance.Logger.LogWarning($"Ignoring localization resource without a language folder: '{resourceName}'.");
+                    continue;
+                }
 
-            LocalizationManager.Instance.GetLocalization().AddJsonFile(lang, (new StreamReader(resourceStream, Encoding.UTF8)).ReadToEnd());
+                string language = relativeName.Substring(0, separator);
+                try
+                {
+                    using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+                    {
+                        if (stream == null)
+                        {
+                            instance.Logger.LogWarning($"Could not open localization resource '{resourceName}'.");
+                            continue;
+                        }
+
+                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                            localization.AddJsonFile(language, reader.ReadToEnd());
+                    }
+                }
+                catch (Exception exception)
+                {
+                    // A damaged translation must not stop other languages or piece registration.
+                    instance.Logger.LogWarning($"Could not load localization resource '{resourceName}': {exception}");
+                }
+            }
         }
 
         // Jotunn also raises SettingChanged when restoring local values after disconnecting.

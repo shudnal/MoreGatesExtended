@@ -77,10 +77,9 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="moregates" />
-    <EmbeddedResource Include="translations\English\jotunn.json" />
-    <EmbeddedResource Include="translations\English\moregates.json" />
-    <EmbeddedResource Include="translations\Russian\jotunn.json" />
-    <EmbeddedResource Include="translations\Russian\moregates.json" />
+    <EmbeddedResource Include="translations\**\*.json">
+      <WithCulture>false</WithCulture>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
