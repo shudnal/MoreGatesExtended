@@ -178,18 +178,19 @@ namespace MoreGatesExtended
 
             private static bool IsHeadless => SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null;
 
-            internal static void Collect(AssetBundle bundle)
+            internal static void Collect(AssetBundle bundle, IEnumerable<GameObject> prefabs)
             {
-                if (bundle == null || bundle == collectedBundle || IsHeadless)
+                if (bundle == null || prefabs == null || bundle == collectedBundle || IsHeadless)
                     return;
 
                 try
                 {
-                    // Capture bundle-local references before Jotunn replaces mocks with shared vanilla prefabs.
-                    // Loading all prefab assets also includes standalone sounds that are not children of a piece.
+                    // Start only from registered pieces; loading every asset can deserialize unused legacy scripts.
+                    // Follow their effect references before Jotunn replaces mocks with shared vanilla prefabs.
                     HashSet<GameObject> visited = new HashSet<GameObject>();
-                    foreach (GameObject prefab in bundle.LoadAllAssets<GameObject>())
-                        CollectPrefab(prefab, visited);
+                    foreach (GameObject prefab in prefabs)
+                        if (prefab != null)
+                            CollectPrefab(prefab, visited, prefab.name);
 
                     collectedBundle = bundle;
                     LogInfo($"Collected {sources.Count} MoreGates prefab audio source(s).");
@@ -215,7 +216,7 @@ namespace MoreGatesExtended
                 return false;
             }
 
-            private static void CollectPrefab(GameObject prefab, HashSet<GameObject> visited)
+            private static void CollectPrefab(GameObject prefab, HashSet<GameObject> visited, string pieceName)
             {
                 if (prefab == null || !visited.Add(prefab) || IsMock(prefab.transform))
                     return;
@@ -223,10 +224,14 @@ namespace MoreGatesExtended
                 foreach (AudioSource source in prefab.GetComponents<AudioSource>())
                     sources.Add(source);
 
+                int missingScripts = 0;
                 foreach (MonoBehaviour component in prefab.GetComponents<MonoBehaviour>())
                 {
                     if (component == null)
+                    {
+                        missingScripts++;
                         continue;
+                    }
 
                     foreach (FieldInfo field in GetEffectFields(component.GetType()))
                     {
@@ -237,13 +242,29 @@ namespace MoreGatesExtended
                         // Includes Door open/close/locked effects and nested destruction or placement effects.
                         foreach (EffectList.EffectData effect in effects.m_effectPrefabs)
                             if (effect != null)
-                                CollectPrefab(effect.m_prefab, visited);
+                                CollectPrefab(effect.m_prefab, visited, pieceName);
                     }
                 }
 
+                if (missingScripts > 0)
+                    instance.Logger.LogWarning($"MoreGates piece '{pieceName}' references object '{GetObjectPath(prefab.transform)}' " +
+                        $"with {missingScripts} missing script component(s). Audio collection skipped those components; inspect the asset's script references.");
+
                 // Transform traversal includes inactive children without activating or instantiating any prefab.
                 foreach (Transform child in prefab.transform)
-                    CollectPrefab(child.gameObject, visited);
+                    CollectPrefab(child.gameObject, visited, pieceName);
+            }
+
+            private static string GetObjectPath(Transform transform)
+            {
+                Stack<string> path = new Stack<string>();
+                for (Transform current = transform; current != null; current = current.parent)
+                {
+                    string name = string.IsNullOrEmpty(current.name) ? "<unnamed>" : current.name;
+                    path.Push($"{name}[{current.GetSiblingIndex()}]");
+                }
+
+                return string.Join("/", path);
             }
 
             private static FieldInfo[] GetEffectFields(Type componentType)
@@ -523,6 +544,7 @@ namespace MoreGatesExtended
                 CraftingStation = "Workbench"
             };
 
+            LogInfo($"Loading MoreGates prefab '{name}'.");
             CustomPiece piece = new CustomPiece(bundleFromResources, name, fixReference: true, pieceConfig);
             if (piece.Piece != null)
                 piece.Piece.m_usage = GetUsageTags(name);
@@ -537,7 +559,6 @@ namespace MoreGatesExtended
         public static void RegisterPrefabs()
         {
             bundleFromResources = AssetUtils.LoadAssetBundleFromResources("moregates");
-            PrefabAudioRouting.Collect(bundleFromResources);
 
             LoadAsset("h_drawbridge01", new RequirementConfig[3]
             {
@@ -762,6 +783,9 @@ namespace MoreGatesExtended
             {
                 new RequirementConfig("RoundLog", 50, recover:true)
             });
+
+            PrefabAudioRouting.Collect(bundleFromResources,
+                registeredPieces.Values.Select(definition => definition.CustomPiece.PiecePrefab));
         }
     }
 }
