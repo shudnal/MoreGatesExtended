@@ -62,6 +62,14 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\Assemblies\stable\UnityEngine.AssetBundleModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.AudioModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Assemblies\stable\UnityEngine.AudioModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Assemblies\stable\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\Assemblies\stable\UnityEngine.CoreModule.dll</HintPath>
@@ -69,10 +77,9 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="moregates" />
-    <EmbeddedResource Include="translations\English\jotunn.json" />
-    <EmbeddedResource Include="translations\English\moregates.json" />
-    <EmbeddedResource Include="translations\Russian\jotunn.json" />
-    <EmbeddedResource Include="translations\Russian\moregates.json" />
+    <EmbeddedResource Include="translations\**\*.json">
+      <WithCulture>false</WithCulture>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>

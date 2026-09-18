@@ -5,18 +5,19 @@
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
-using Jotunn.Managers;
-using Jotunn.Utils;
-using System.IO;
-using System.Reflection;
-using System.Text;
-using System.Linq;
 using Jotunn.Configs;
 using Jotunn.Entities;
-using UnityEngine;
-using System.Collections.Generic;
+using Jotunn.Managers;
+using Jotunn.Utils;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Reflection.Emit;
+using System.Text;
+using UnityEngine;
 
 namespace MoreGatesExtended
 {
@@ -28,7 +29,7 @@ namespace MoreGatesExtended
     {
         public const string pluginID = "shudnal.MoreGatesExtended";
         public const string pluginName = "More Gates Extended";
-        public const string pluginVersion = "1.0.4";
+        public const string pluginVersion = "1.0.5";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -64,11 +65,7 @@ namespace MoreGatesExtended
 
             Game.isModded = true;
 
-            LoadTranslation("jotunn.json", "English");
-            LoadTranslation("jotunn.json", "Russian");
-
-            LoadTranslation("moregates.json", "English");
-            LoadTranslation("moregates.json", "Russian");
+            LoadTranslations();
 
             FillCustomRecipesAndDisabledPieces();
 
@@ -88,6 +85,7 @@ namespace MoreGatesExtended
             configurationUpdatePending = false;
             registeredObjectDB = null;
             registeredPieces.Clear();
+            PrefabAudioRouting.Clear();
             Config.Save();
             instance = null;
             harmony?.UnpatchSelf();
@@ -117,15 +115,48 @@ namespace MoreGatesExtended
                 new ConfigurationManagerAttributes { IsAdminOnly = synchronizedSetting }));
         }
 
-        internal static void LoadTranslation(string file, string lang)
+        internal static void LoadTranslations()
         {
-            Assembly executingAssembly = Assembly.GetExecutingAssembly();
+            Assembly assembly = typeof(MoreGatesExtended).Assembly;
+            string prefix = typeof(MoreGatesExtended).Namespace + ".translations.";
+            CustomLocalization localization = LocalizationManager.Instance.GetLocalization();
 
-            string name = executingAssembly.GetManifestResourceNames().Single(str => str.EndsWith(file) && str.IndexOf(lang) >= 0);
+            // Each embedded translations/<Language>/*.json resource belongs to exactly one language.
+            foreach (string resourceName in assembly.GetManifestResourceNames().OrderBy(name => name, StringComparer.Ordinal))
+            {
+                if (!resourceName.StartsWith(prefix, StringComparison.Ordinal) ||
+                    !resourceName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-            Stream resourceStream = executingAssembly.GetManifestResourceStream(name);
+                string relativeName = resourceName.Substring(prefix.Length);
+                int separator = relativeName.IndexOf('.');
+                if (separator <= 0)
+                {
+                    instance.Logger.LogWarning($"Ignoring localization resource without a language folder: '{resourceName}'.");
+                    continue;
+                }
 
-            LocalizationManager.Instance.GetLocalization().AddJsonFile(lang, (new StreamReader(resourceStream, Encoding.UTF8)).ReadToEnd());
+                string language = relativeName.Substring(0, separator);
+                try
+                {
+                    using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+                    {
+                        if (stream == null)
+                        {
+                            instance.Logger.LogWarning($"Could not open localization resource '{resourceName}'.");
+                            continue;
+                        }
+
+                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                            localization.AddJsonFile(language, reader.ReadToEnd());
+                    }
+                }
+                catch (Exception exception)
+                {
+                    // A damaged translation must not stop other languages or piece registration.
+                    instance.Logger.LogWarning($"Could not load localization resource '{resourceName}': {exception}");
+                }
+            }
         }
 
         // Jotunn also raises SettingChanged when restoring local values after disconnecting.
@@ -142,6 +173,7 @@ namespace MoreGatesExtended
         private static void OnPiecesRegistered()
         {
             registeredObjectDB = ObjectDB.instance;
+            PrefabAudioRouting.Apply(AudioMan.instance);
             RequestConfigurationUpdate();
         }
 
@@ -153,6 +185,197 @@ namespace MoreGatesExtended
 
             configurationUpdatePending = false;
             ApplyPieceConfiguration();
+        }
+
+        [HarmonyPatch(typeof(AudioMan), nameof(AudioMan.Awake))]
+        private static class AudioMan_Awake_AudioRouting
+        {
+            private static void Postfix(AudioMan __instance)
+            {
+                // A duplicate AudioMan destroys itself; never bind to its mixer.
+                if (__instance == AudioMan.instance)
+                    PrefabAudioRouting.Apply(__instance);
+            }
+        }
+
+        private static class PrefabAudioRouting
+        {
+            private static readonly HashSet<AudioSource> sources = new HashSet<AudioSource>();
+            private static readonly Dictionary<Type, FieldInfo[]> effectFields = new Dictionary<Type, FieldInfo[]>();
+            private static AssetBundle collectedBundle;
+            private static UnityEngine.Audio.AudioMixerGroup sfxGroup;
+            private static UnityEngine.Audio.AudioMixer warnedMixer;
+
+            private static bool IsHeadless => SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null;
+
+            internal static void Collect(AssetBundle bundle, IEnumerable<GameObject> prefabs)
+            {
+                if (bundle == null || prefabs == null || bundle == collectedBundle || IsHeadless)
+                    return;
+
+                try
+                {
+                    // Start only from registered pieces; loading every asset can deserialize unused legacy scripts.
+                    // Follow their effect references before Jotunn replaces mocks with shared vanilla prefabs.
+                    HashSet<GameObject> visited = new HashSet<GameObject>();
+                    foreach (GameObject prefab in prefabs)
+                        if (prefab != null)
+                            CollectPrefab(prefab, visited, prefab.name);
+
+                    collectedBundle = bundle;
+                    LogInfo($"Collected {sources.Count} MoreGates prefab audio source(s).");
+                }
+                catch (Exception exception)
+                {
+                    instance.Logger.LogWarning($"Could not collect all MoreGates prefab audio sources: {exception}");
+                }
+
+                // Covers initialization after an AudioMan already exists. OnPiecesRegistered reapplies after mocking.
+                Apply(AudioMan.instance);
+            }
+
+            private static bool IsMock(Transform transform)
+            {
+                for (Transform current = transform; current != null; current = current.parent)
+                {
+                    if (current.name.StartsWith("JVLmock_", StringComparison.Ordinal) ||
+                        current.name.StartsWith("VLmock_", StringComparison.Ordinal))
+                        return true;
+                }
+
+                return false;
+            }
+
+            private static void CollectPrefab(GameObject prefab, HashSet<GameObject> visited, string pieceName)
+            {
+                if (prefab == null || !visited.Add(prefab) || IsMock(prefab.transform))
+                    return;
+
+                foreach (AudioSource source in prefab.GetComponents<AudioSource>())
+                    sources.Add(source);
+
+                int missingScripts = 0;
+                foreach (MonoBehaviour component in prefab.GetComponents<MonoBehaviour>())
+                {
+                    if (component == null)
+                    {
+                        missingScripts++;
+                        continue;
+                    }
+
+                    foreach (FieldInfo field in GetEffectFields(component.GetType()))
+                    {
+                        EffectList effects = field.GetValue(component) as EffectList;
+                        if (effects?.m_effectPrefabs == null)
+                            continue;
+
+                        // Includes Door open/close/locked effects and nested destruction or placement effects.
+                        foreach (EffectList.EffectData effect in effects.m_effectPrefabs)
+                            if (effect != null)
+                                CollectPrefab(effect.m_prefab, visited, pieceName);
+                    }
+                }
+
+                if (missingScripts > 0 && loggingEnabled.Value)
+                    LogInfo($"MoreGates piece '{pieceName}' references object '{GetObjectPath(prefab.transform)}' " +
+                        $"with {missingScripts} missing script component(s). Audio collection skipped those components; inspect the asset's script references.");
+
+                // Transform traversal includes inactive children without activating or instantiating any prefab.
+                foreach (Transform child in prefab.transform)
+                    CollectPrefab(child.gameObject, visited, pieceName);
+            }
+
+            private static string GetObjectPath(Transform transform)
+            {
+                List<string> path = new List<string>();
+                for (Transform current = transform; current != null; current = current.parent)
+                {
+                    string name = string.IsNullOrEmpty(current.name) ? "<unnamed>" : current.name;
+                    path.Add($"{name}[{current.GetSiblingIndex()}]");
+                }
+
+                path.Reverse();
+                return string.Join("/", path.ToArray());
+            }
+
+            private static FieldInfo[] GetEffectFields(Type componentType)
+            {
+                if (!effectFields.TryGetValue(componentType, out FieldInfo[] fields))
+                {
+                    List<FieldInfo> result = new List<FieldInfo>();
+                    for (Type type = componentType; type != null && typeof(MonoBehaviour).IsAssignableFrom(type); type = type.BaseType)
+                    {
+                        foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public |
+                            BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                            if (field.FieldType == typeof(EffectList))
+                                result.Add(field);
+                    }
+
+                    fields = result.ToArray();
+                    effectFields[componentType] = fields;
+                }
+
+                return fields;
+            }
+
+            internal static void Apply(AudioMan audioMan)
+            {
+                if (instance == null || audioMan == null || audioMan != AudioMan.instance ||
+                    audioMan.m_masterMixer == null || sources.Count == 0 || IsHeadless)
+                    return;
+
+                try
+                {
+                    UnityEngine.Audio.AudioMixer mixer = audioMan.m_masterMixer;
+                    if (sfxGroup == null || sfxGroup.audioMixer != mixer)
+                    {
+                        // Match the group itself, not an arbitrary child whose path contains "Sfx".
+                        sfxGroup = mixer.FindMatchingGroups(string.Empty)
+                            .FirstOrDefault(group => group != null && string.Equals(group.name, "Sfx", StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    if (sfxGroup == null)
+                    {
+                        if (warnedMixer != mixer)
+                        {
+                            warnedMixer = mixer;
+                            instance.Logger.LogWarning("Could not find the game's Sfx mixer group; MoreGates prefab audio routing was not changed.");
+                        }
+
+                        // Never fall back to Master or GUI: that would route these sounds to the wrong bus.
+                        return;
+                    }
+
+                    warnedMixer = null;
+                    sources.RemoveWhere(source => source == null);
+                    int changed = 0;
+                    foreach (AudioSource source in sources)
+                    {
+                        if (source.outputAudioMixerGroup == sfxGroup)
+                            continue;
+
+                        // Replace both missing groups and mixer copies embedded in the legacy asset bundle.
+                        source.outputAudioMixerGroup = sfxGroup;
+                        changed++;
+                    }
+
+                    LogInfo($"Prepared {sources.Count} MoreGates prefab audio source(s); updated {changed} Sfx mixer binding(s).");
+                }
+                catch (Exception exception)
+                {
+                    // Audio initialization must not prevent piece registration or AudioMan startup.
+                    instance.Logger.LogWarning($"Could not apply MoreGates prefab audio routing: {exception}");
+                }
+            }
+
+            internal static void Clear()
+            {
+                sources.Clear();
+                effectFields.Clear();
+                collectedBundle = null;
+                sfxGroup = null;
+                warnedMixer = null;
+            }
         }
 
         internal static void FillCustomRecipesAndDisabledPieces()
@@ -339,22 +562,36 @@ namespace MoreGatesExtended
             }
         }
 
+        private static string GetNativeCategory(Piece.UsageTagFlags usage)
+        {
+            if ((usage & Piece.UsageTagFlags.Building) != 0)
+                return PieceCategories.Building;
+
+            if ((usage & (Piece.UsageTagFlags.Furniture | Piece.UsageTagFlags.Decor)) != 0)
+                return PieceCategories.Furniture;
+
+            return PieceCategories.Misc;
+        }
+
         private static void LoadAsset(string name, RequirementConfig[] requirements)
         {
             // Register the same network prefabs on every peer before the first server configuration arrives.
+            Piece.UsageTagFlags usage = GetUsageTags(name);
             PieceConfig pieceConfig = new PieceConfig
             {
                 Name = $"$piece_mg_{name}",
                 PieceTable = "Hammer",
-                Category = "moregates",
+                // Custom categories add their own Hammer tag in Jotunn; keep classification native.
+                Category = GetNativeCategory(usage),
                 Requirements = requirements,
                 Description = $"$piece_mg_{name}_desc",
                 CraftingStation = "Workbench"
             };
 
+            LogInfo($"Loading MoreGates prefab '{name}'.");
             CustomPiece piece = new CustomPiece(bundleFromResources, name, fixReference: true, pieceConfig);
             if (piece.Piece != null)
-                piece.Piece.m_usage = GetUsageTags(name);
+                piece.Piece.m_usage = usage;
 
             if (PieceManager.Instance.AddPiece(piece))
             {
@@ -590,6 +827,90 @@ namespace MoreGatesExtended
             {
                 new RequirementConfig("RoundLog", 50, recover:true)
             });
+
+            PrefabAudioRouting.Collect(bundleFromResources,
+                registeredPieces.Values.Select(definition => definition.CustomPiece.PiecePrefab));
         }
+
+        [HarmonyPatch(typeof(Destructible), nameof(Destructible.CreateFragments))]
+        internal static class FragmentColliderFix
+        {
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            {
+                List<CodeInstruction> codes = new List<CodeInstruction>(instructions);
+                int colliderCall = -1;
+                int matches = 0;
+                for (int i = 0; i < codes.Count; i++)
+                {
+                    CodeInstruction code = codes[i];
+                    if ((code.opcode == OpCodes.Call || code.opcode == OpCodes.Callvirt) &&
+                        code.operand is MethodInfo method && method.DeclaringType == typeof(GameObject) &&
+                        method.Name == nameof(GameObject.AddComponent) && method.IsGenericMethod &&
+                        method.ReturnType == typeof(BoxCollider) && method.GetParameters().Length == 0)
+                    {
+                        colliderCall = i;
+                        matches++;
+                    }
+                }
+
+                if (matches != 1)
+                {
+                    Debug.LogWarning($"{MoreGatesExtended.pluginName}: expected one BoxCollider creation in Destructible.CreateFragments, " +
+                        $"found {matches}. The fragment collider fix was not applied.");
+                    return codes;
+                }
+
+                // Replace only the collider factory; preserve the game's fragment selection, rendering and physics.
+                CodeInstruction call = codes[colliderCall];
+                CodeInstruction loadRoot = new CodeInstruction(OpCodes.Ldarg_0);
+                loadRoot.labels.AddRange(call.labels);
+                call.labels.Clear();
+                foreach (ExceptionBlock block in call.blocks)
+                    if (block.blockType != ExceptionBlockType.EndExceptionBlock)
+                        loadRoot.blocks.Add(block);
+                call.blocks.RemoveAll(block => block.blockType != ExceptionBlockType.EndExceptionBlock);
+                call.opcode = OpCodes.Call;
+                call.operand = AccessTools.Method(typeof(FragmentColliderFix), nameof(AddFragmentCollider));
+                codes.Insert(colliderCall, loadRoot);
+                return codes;
+            }
+
+            private static BoxCollider AddFragmentCollider(GameObject fragment, GameObject sourceRoot)
+            {
+                Transform fragmentTransform = fragment.transform;
+                Vector3 scale = fragmentTransform.localScale;
+                if (!(scale.x < 0f || scale.y < 0f || scale.z < 0f) || sourceRoot == null || fragmentTransform.parent != null)
+                    return fragment.AddComponent<BoxCollider>();
+
+                // WearNTear can pass a child from m_fragmentRoots rather than the piece root itself.
+                Piece piece = sourceRoot.GetComponentInParent<Piece>();
+                CustomPiece definition = piece == null ? null : PieceManager.Instance.GetPiece(Utils.GetPrefabName(piece.gameObject));
+                if (definition?.SourceMod?.GUID != MoreGatesExtended.pluginID)
+                    return fragment.AddComponent<BoxCollider>();
+
+                MeshFilter meshFilter = fragment.GetComponent<MeshFilter>();
+                if (meshFilter == null || meshFilter.sharedMesh == null)
+                    return fragment.AddComponent<BoxCollider>();
+
+                Vector3 reflection = new Vector3(scale.x < 0f ? -1f : 1f, scale.y < 0f ? -1f : 1f, scale.z < 0f ? -1f : 1f);
+                Bounds bounds = meshFilter.sharedMesh.bounds;
+                GameObject colliderObject = new GameObject("MoreGatesFragmentCollider");
+                colliderObject.layer = fragment.layer;
+                Transform colliderTransform = colliderObject.transform;
+                colliderTransform.SetParent(fragmentTransform, false);
+                colliderTransform.localPosition = Vector3.zero;
+                colliderTransform.localRotation = Quaternion.identity;
+
+                // Cancel the parent's reflection before adding the collider, so its effective scale is non-negative.
+                // The original mesh, renderer, material overrides and Rigidbody stay on the untouched fragment.
+                colliderTransform.localScale = reflection;
+                BoxCollider collider = colliderObject.AddComponent<BoxCollider>();
+                collider.center = Vector3.Scale(bounds.center, reflection);
+                collider.size = bounds.size;
+                // This child uses the fragment's Rigidbody and is removed by its existing TimedDestruction.
+                return collider;
+            }
+        }
+
     }
 }

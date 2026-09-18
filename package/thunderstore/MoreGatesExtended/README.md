@@ -3,7 +3,7 @@
 
 Some pieces are disabled in the build menu by default because they duplicate vanilla parts. Their prefabs remain registered, so existing structures stay loadable. Clear `Disabled pieces` to make them buildable again.
 
-You can change the tool used to build the pieces. MoreGates pieces use the fixed internal `moregates` Jotunn piece category and Valheim's native Hammer usage tags for their build-menu classification.
+You can change the tool used to build the pieces. MoreGates pieces use vanilla piece categories and Valheim's native Hammer usage tags. Doors, windows, gates and drawbridges appear under the standard Doors and Windows tag; no separate MoreGates category is registered.
 
 ## Recipes are configurable
 
@@ -13,7 +13,13 @@ Recipes are set in `Custom recipes` config and it's comma separated list of form
 
 ## Localization
 
-Localizations can be provide through loading side by side with the plugin. The folder structure which will be queried will be `Translations/{LanguageName}/{anyname}.json`, and can be placed in any sub directory within the plugin. An example of a path which will be read for localization at run time may be: `BepInEx/plugins/MoreGatesExtended/Translations/English/backpack.json`.
+Built-in translations cover 35 languages: `English`, `Russian`, `German`, `Spanish`, `Czech`, `Dutch`, `French`, `Japanese`, `Korean`, `Polish`, `Portuguese_Brazilian`, `Turkish`, `Ukrainian`, `Chinese`, `Chinese_Trad`, `Swedish`, `Italian`, `Romanian`, `Bulgarian`, `Macedonian`, `Finnish`, `Danish`, `Norwegian`, `Icelandic`, `Lithuanian`, `Hungarian`, `Slovak`, `Portuguese_European`, `Hindi`, `Thai`, `Croatian`, `Georgian`, `Greek`, `Serbian`, `Latvian`.
+
+All 41 piece names are translated. Existing English and Russian text is preserved, and empty English descriptions remain empty in the additional languages.
+
+Embedded files under `translations/{LanguageName}/*.json` are included automatically by the project and loaded in one deterministic loop. Adding a language does not require another C# call or project-file entry. Folder names are matched exactly, so `Chinese`/`Chinese_Trad` and the two Portuguese variants remain separate.
+
+Localizations can be provide through loading side by side with the plugin. The folder structure which will be queried will be `Translations/{LanguageName}/{anyname}.json`, and can be placed in any sub directory within the plugin. An example of a path which will be read for localization at run time may be: `BepInEx/plugins/MoreGatesExtended/Translations/English/moregates.json`.
 
 All .json files within such a directory will be iterated through and localizations added for each of those languages.
 

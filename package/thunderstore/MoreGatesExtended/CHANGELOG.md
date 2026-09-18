@@ -1,3 +1,10 @@
+# 1.0.5
+* Added translations for 33 additional languages and automatic loading of embedded localization files.
+* Removed the extra Doors/Windows category; pieces use the standard build-menu tags without a separate MoreGates category.
+* Fixed BoxCollider warnings when destroying mirrored MoreGates pieces.
+* Fixed excessively loud door, window, and other MoreGates sound effects after Valheim 1.0 by making them respect the game's Master and SFX volume settings.
+* Avoided loading unused legacy assets during audio initialization and added named diagnostics for missing script references.
+
 # 1.0.4
 * Updated piece classification for the Valheim 1.0.12 build menu using native Hammer usage tags.
 * Assigned doors and windows, drawbridges, defenses, structural beams, decoration, and the corewood stack to their appropriate build-menu categories.
