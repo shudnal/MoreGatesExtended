@@ -3,7 +3,7 @@
 
 Some pieces are disabled in the build menu by default because they duplicate vanilla parts. Their prefabs remain registered, so existing structures stay loadable. Clear `Disabled pieces` to make them buildable again.
 
-You can change the tool used to build the pieces. MoreGates pieces use the fixed internal `moregates` Jotunn piece category and Valheim's native Hammer usage tags for their build-menu classification.
+You can change the tool used to build the pieces. MoreGates pieces use vanilla piece categories and Valheim's native Hammer usage tags. Doors, windows, gates and drawbridges appear under the standard Doors and Windows tag; no separate MoreGates category is registered.
 
 ## Recipes are configurable
 

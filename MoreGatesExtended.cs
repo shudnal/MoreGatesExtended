@@ -533,14 +533,27 @@ namespace MoreGatesExtended
             }
         }
 
+        private static string GetNativeCategory(Piece.UsageTagFlags usage)
+        {
+            if ((usage & Piece.UsageTagFlags.Building) != 0)
+                return PieceCategories.Building;
+
+            if ((usage & (Piece.UsageTagFlags.Furniture | Piece.UsageTagFlags.Decor)) != 0)
+                return PieceCategories.Furniture;
+
+            return PieceCategories.Misc;
+        }
+
         private static void LoadAsset(string name, RequirementConfig[] requirements)
         {
             // Register the same network prefabs on every peer before the first server configuration arrives.
+            Piece.UsageTagFlags usage = GetUsageTags(name);
             PieceConfig pieceConfig = new PieceConfig
             {
                 Name = $"$piece_mg_{name}",
                 PieceTable = "Hammer",
-                Category = "moregates",
+                // Custom categories add their own Hammer tag in Jotunn; keep classification native.
+                Category = GetNativeCategory(usage),
                 Requirements = requirements,
                 Description = $"$piece_mg_{name}_desc",
                 CraftingStation = "Workbench"
@@ -549,7 +562,7 @@ namespace MoreGatesExtended
             LogInfo($"Loading MoreGates prefab '{name}'.");
             CustomPiece piece = new CustomPiece(bundleFromResources, name, fixReference: true, pieceConfig);
             if (piece.Piece != null)
-                piece.Piece.m_usage = GetUsageTags(name);
+                piece.Piece.m_usage = usage;
 
             if (PieceManager.Instance.AddPiece(piece))
             {
