@@ -1,4 +1,5 @@
 # 1.0.5
+* Fixed BoxCollider warnings when destroying mirrored MoreGates pieces.
 * Fixed excessively loud door, window, and other MoreGates sound effects after Valheim 1.0 by making them respect the game's Master and SFX volume settings.
 * Avoided loading unused legacy assets during audio initialization and added named diagnostics for missing script references.
 
