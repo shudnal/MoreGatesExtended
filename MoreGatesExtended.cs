@@ -246,8 +246,8 @@ namespace MoreGatesExtended
                     }
                 }
 
-                if (missingScripts > 0)
-                    instance.Logger.LogWarning($"MoreGates piece '{pieceName}' references object '{GetObjectPath(prefab.transform)}' " +
+                if (missingScripts > 0 && loggingEnabled.Value)
+                    LogInfo($"MoreGates piece '{pieceName}' references object '{GetObjectPath(prefab.transform)}' " +
                         $"with {missingScripts} missing script component(s). Audio collection skipped those components; inspect the asset's script references.");
 
                 // Transform traversal includes inactive children without activating or instantiating any prefab.
@@ -257,14 +257,15 @@ namespace MoreGatesExtended
 
             private static string GetObjectPath(Transform transform)
             {
-                Stack<string> path = new Stack<string>();
+                List<string> path = new List<string>();
                 for (Transform current = transform; current != null; current = current.parent)
                 {
                     string name = string.IsNullOrEmpty(current.name) ? "<unnamed>" : current.name;
-                    path.Push($"{name}[{current.GetSiblingIndex()}]");
+                    path.Add($"{name}[{current.GetSiblingIndex()}]");
                 }
 
-                return string.Join("/", path);
+                path.Reverse();
+                return string.Join("/", path.ToArray());
             }
 
             private static FieldInfo[] GetEffectFields(Type componentType)
