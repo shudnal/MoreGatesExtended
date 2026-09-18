@@ -5,6 +5,6 @@
   "description": "MoreGates mod originally created by LordHayze. Localization support, configurable recipes, disableable pieces.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2350",
-    "ValheimModding-Jotunn-2.30.0"
+    "ValheimModding-Jotunn-2.30.1"
   ]
 }
